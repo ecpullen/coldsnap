@@ -6,6 +6,7 @@ Download Amazon EBS snapshots.
 */
 
 use crate::block_device::get_block_device_size;
+use crate::Client;
 use async_trait::async_trait;
 use aws_sdk_ebs::Client as EbsClient;
 use base64::engine::general_purpose::STANDARD as base64_engine;
@@ -40,13 +41,13 @@ const SHA256_ALGORITHM: &str = "SHA256";
 // need fewer API calls.
 const LIST_REQUEST_MAX_RESULTS: i32 = 10000;
 
-pub struct SnapshotDownloader {
-    ebs_client: EbsClient,
+pub struct SnapshotDownloader<'a> {
+    download_client: &'a Client,
 }
 
-impl SnapshotDownloader {
-    pub fn new(ebs_client: EbsClient) -> Self {
-        SnapshotDownloader { ebs_client }
+impl<'a> SnapshotDownloader<'a> {
+    pub fn new(download_client: &'a Client) -> Self {
+        SnapshotDownloader { download_client }
     }
 
     /// Download a snapshot into the file at the specified path.
@@ -124,7 +125,7 @@ impl SnapshotDownloader {
                 snapshot_id: snapshot.snapshot_id.clone(),
                 block_errors: Arc::clone(&block_errors),
                 progress_bar: Arc::clone(&progress_bar),
-                ebs_client: self.ebs_client.clone(),
+                ebs_client: self.download_client.ebs_client.clone(),
             });
         }
 
@@ -187,6 +188,7 @@ impl SnapshotDownloader {
 
         loop {
             let response = self
+                .download_client
                 .ebs_client
                 .list_snapshot_blocks()
                 .snapshot_id(snapshot_id)

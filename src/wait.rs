@@ -6,10 +6,11 @@ Wait for Amazon EBS snapshots to be in the desired state.
 */
 
 use aws_sdk_ec2::types::SnapshotState;
-use aws_sdk_ec2::Client as Ec2Client;
 use snafu::{ensure, ResultExt, Snafu};
 use std::thread::sleep;
 use std::time::Duration;
+
+use crate::Client;
 
 #[derive(Debug, Snafu)]
 pub struct Error(error::Error);
@@ -62,13 +63,13 @@ impl WaitParams {
 
 /// Allows you to wait for snapshots to come to a desired state in the region associated with the
 /// given Ec2Client.
-pub struct SnapshotWaiter {
-    ec2_client: Ec2Client,
+pub struct SnapshotWaiter<'a> {
+    wait_client: &'a Client,
 }
 
-impl SnapshotWaiter {
-    pub fn new(ec2_client: Ec2Client) -> Self {
-        Self { ec2_client }
+impl<'a> SnapshotWaiter<'a> {
+    pub fn new(wait_client: &'a Client) -> Self {
+        Self { wait_client }
     }
 
     /// Waits for the given snapshot ID to be completed.
@@ -103,6 +104,7 @@ impl SnapshotWaiter {
             );
 
             let describe_response = self
+                .wait_client
                 .ec2_client
                 .describe_snapshots()
                 .set_snapshot_ids(Some(vec![snapshot_id.as_ref().to_string()]))

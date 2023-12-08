@@ -6,6 +6,7 @@ Upload Amazon EBS snapshots.
 */
 
 use crate::block_device::get_block_device_size;
+use crate::Client;
 use aws_sdk_ebs::primitives::ByteStream;
 use aws_sdk_ebs::types::{ChecksumAggregationMethod, ChecksumAlgorithm};
 use aws_sdk_ebs::Client as EbsClient;
@@ -47,13 +48,13 @@ const SHA256_ALGORITHM: ChecksumAlgorithm = ChecksumAlgorithm::ChecksumAlgorithm
 const LINEAR_METHOD: ChecksumAggregationMethod =
     ChecksumAggregationMethod::ChecksumAggregationLinear;
 
-pub struct SnapshotUploader {
-    ebs_client: EbsClient,
+pub struct SnapshotUploader<'a> {
+    upload_client: &'a Client,
 }
 
-impl SnapshotUploader {
-    pub fn new(ebs_client: EbsClient) -> Self {
-        SnapshotUploader { ebs_client }
+impl<'a> SnapshotUploader<'a> {
+    pub fn new(upload_client: &'a Client) -> Self {
+        SnapshotUploader { upload_client }
     }
 
     /// Upload a snapshot from the file at the specified path.
@@ -163,7 +164,7 @@ impl SnapshotUploader {
                 block_digests: Arc::clone(&block_digests),
                 block_errors: Arc::clone(&block_errors),
                 progress_bar: Arc::clone(&progress_bar),
-                ebs_client: self.ebs_client.clone(),
+                ebs_client: self.upload_client.ebs_client.clone(),
             });
 
             remaining_data -= i64::from(block_size);
@@ -253,6 +254,7 @@ impl SnapshotUploader {
     /// Start a new snapshot and return the ID and block size for subsequent puts.
     async fn start_snapshot(&self, volume_size: i64, description: String) -> Result<(String, i32)> {
         let start_response = self
+            .upload_client
             .ebs_client
             .start_snapshot()
             .volume_size(volume_size)
@@ -279,7 +281,8 @@ impl SnapshotUploader {
         changed_blocks_count: i32,
         checksum: &str,
     ) -> Result<()> {
-        self.ebs_client
+        self.upload_client
+            .ebs_client
             .complete_snapshot()
             .snapshot_id(snapshot_id)
             .changed_blocks_count(changed_blocks_count)

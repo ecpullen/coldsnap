@@ -7,11 +7,9 @@ snapshots.
 */
 
 use argh::FromArgs;
-use aws_sdk_ebs::Client as EbsClient;
-use aws_sdk_ec2::Client as Ec2Client;
-use aws_types::region::Region;
-use aws_types::SdkConfig;
-use coldsnap::{SnapshotDownloader, SnapshotUploader, SnapshotWaiter, WaitParams};
+use coldsnap::{
+    build_client_config, Client, SnapshotDownloader, SnapshotUploader, SnapshotWaiter, WaitParams,
+};
 use env_logger::{Builder, Env};
 use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, LevelFilter};
@@ -37,11 +35,10 @@ async fn run() -> Result<()> {
     init_logger(args.verbose);
 
     let client_config = build_client_config(args.region, args.profile, args.endpoint).await;
-
+    let client = Client::new(&client_config);
     match args.subcommand {
         SubCommand::Download(download_args) => {
-            let client = EbsClient::new(&client_config);
-            let downloader = SnapshotDownloader::new(client);
+            let downloader = SnapshotDownloader::new(&client);
             ensure!(
                 download_args.file.file_name().is_some(),
                 error::ValidateFilenameSnafu {
@@ -72,8 +69,7 @@ async fn run() -> Result<()> {
         }
 
         SubCommand::Upload(upload_args) => {
-            let client = EbsClient::new(&client_config);
-            let uploader = SnapshotUploader::new(client);
+            let uploader = SnapshotUploader::new(&client);
             ensure!(
                 upload_args.file.file_name().is_some(),
                 error::ValidateFilenameSnafu {
@@ -105,8 +101,7 @@ async fn run() -> Result<()> {
                     snapshot_id,
                     upload_args.file.display()
                 );
-                let client = Ec2Client::new(&client_config);
-                let waiter = SnapshotWaiter::new(client);
+                let waiter = SnapshotWaiter::new(&client);
                 waiter
                     .wait_for_completed(&snapshot_id)
                     .await
@@ -115,8 +110,7 @@ async fn run() -> Result<()> {
         }
 
         SubCommand::Wait(wait_args) => {
-            let client = Ec2Client::new(&client_config);
-            let waiter = SnapshotWaiter::new(client);
+            let waiter = SnapshotWaiter::new(&client);
             let wait_params = WaitParams::new(
                 wait_args.desired_status,
                 wait_args.successes_required,
@@ -149,54 +143,6 @@ fn build_progress_bar(no_progress: bool, verb: &str) -> Result<Option<ProgressBa
             .progress_chars("=> "),
     );
     Ok(Some(progress_bar))
-}
-
-/// Create a config to build an AWS SDK client
-async fn build_client_config(
-    region: Option<String>,
-    profile: Option<String>,
-    endpoint: Option<String>,
-) -> SdkConfig {
-    let config: aws_config::ConfigLoader = match (region, &profile) {
-        (Some(region), _) => {
-            // Region option passed in
-            aws_config::from_env().region(Region::new(region))
-        }
-        (None, Some(profile)) => {
-            // Take region from profile
-            aws_config::from_env().region(
-                aws_config::profile::ProfileFileRegionProvider::builder()
-                    .profile_name(profile)
-                    .build(),
-            )
-        }
-        (None, None) => {
-            // No region or profile passed in, use defaults
-            aws_config::from_env()
-        }
-    };
-
-    let config = if let Some(profile) = &profile {
-        // Add profile credential provider
-        config.credentials_provider(
-            aws_config::profile::ProfileFileCredentialsProvider::builder()
-                .profile_name(profile)
-                .build(),
-        )
-    } else {
-        // Keep config unchanged
-        config
-    };
-
-    let config: aws_config::ConfigLoader = match endpoint {
-        Some(endpoint) => config.endpoint_url(endpoint),
-        None => {
-            // Keep config the same
-            config
-        }
-    };
-
-    config.load().await
 }
 
 /// Initializes the logger and sets logging level based on input.
